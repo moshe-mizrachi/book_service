@@ -1,36 +1,34 @@
 package main
 
 import (
+	"book_service/pkg/clients"
+	"book_service/pkg/routes"
+	"book_service/pkg/utils"
+	"fmt"
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/joho/godotenv"
 	"log"
-	"time"
 )
 
-func Logger() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		t := time.Now()
-
-		// Set example variable
-		c.Set("example", "123456789")
-
-		// before request
-
-		c.Next()
-
-		// after request
-		latency := time.Since(t)
-		log.Print(latency)
-		log.Print("שדגדש7נגא7שע א77נא7ט ט")
-
-		// access the status we are sendig
-		status := c.Writer.Status()
-		log.Println(status)
-	}
-}
-
 func main() {
-	r := gin.Default()
-	r.Use(Logger())
+	err := godotenv.Load()
+	if err != nil {
+		fmt.Printf("Error loading .env file: %v", err)
+	}
+
+	if err := clients.InitElasticsearchClient(); err != nil {
+		log.Fatalf("Failed to initialize Elasticsearch: %v", err)
+	}
+	clients.InitWorkerPool(10)
+
+	r := gin.New()
+	binding.EnableDecoderDisallowUnknownFields = true
+
+	r.Use(gin.Recovery())
+	r.Use(utils.CustomLogger())
+
+	routes.RegisterRoutes(r)
 	r.GET("/ping", func(c *gin.Context) {
 		c.JSON(200, gin.H{
 			"message": "pong",
