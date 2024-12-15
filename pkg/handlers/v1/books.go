@@ -18,26 +18,11 @@ import (
 
 var booksIndex, _ = utils.GetEnvVar[string]("BOOKS_INDEX", "books")
 
-func getValidatedPayload[T any](c *gin.Context) (T, bool) {
-	val, exists := c.Get("validated")
-	if !exists {
-		var zero T
-		return zero, false
-	}
-	typedVal, ok := val.(T)
-	return typedVal, ok
-}
-
 func GetBookById(c *gin.Context) {
-	bookReq, ok := getValidatedPayload[req.GetBook](c)
-	if !ok {
-		logrus.Warn("Failed to retrieve validated GetBook payload")
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request payload"})
-		return
-	}
+	bookReq := utils.GetValidatedPayload[req.GetBook](c)
 
 	esQuery := query.NewQueryBuilder().ID(bookReq.ID).Build()
-	hits, err := clients.DoSearch(c, booksIndex, esQuery, 1, 0)
+	hits, _, err := clients.DoSearch(c, booksIndex, esQuery, 1, 0)
 	if err != nil {
 		logrus.Errorf("Error searching for book with ID %s: %v", bookReq.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -54,13 +39,7 @@ func GetBookById(c *gin.Context) {
 }
 
 func CreateBook(c *gin.Context) {
-	bodyBookReq, ok := getValidatedPayload[req.AddBook](c)
-	if !ok {
-		logrus.Warn("Failed to retrieve validated AddBook payload")
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request payload"})
-		return
-	}
-
+	bodyBookReq := utils.GetValidatedPayload[req.AddBook](c)
 	book := common.Book{
 		ID:          uuid.New(),
 		PublishDate: bodyBookReq.PublishDate.Format("2006-01-02"),
@@ -78,13 +57,7 @@ func CreateBook(c *gin.Context) {
 }
 
 func UpdateBook(c *gin.Context) {
-	bodyBookReq, ok := getValidatedPayload[req.UpdateBook](c)
-	if !ok {
-		logrus.Warn("Failed to retrieve validated UpdateBook payload")
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request payload"})
-		return
-	}
-
+	bodyBookReq := utils.GetValidatedPayload[req.UpdateBook](c)
 	titleUpdate := common.TitleUpdate{}
 	if err := copier.Copy(&titleUpdate, &bodyBookReq); err != nil {
 		logrus.Errorf("Error copying UpdateBook payload to TitleUpdate: %v", err)
@@ -98,12 +71,7 @@ func UpdateBook(c *gin.Context) {
 }
 
 func DeleteBook(c *gin.Context) {
-	deleteReq, ok := getValidatedPayload[req.DeleteBook](c)
-	if !ok {
-		logrus.Warn("Failed to retrieve validated DeleteBook payload")
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request payload"})
-		return
-	}
+	deleteReq := utils.GetValidatedPayload[req.DeleteBook](c)
 
 	clients.EnqueueIndexTask(c, booksIndex, deleteReq.ID, "", _const.DeleteIndex)
 	logrus.Infof("Book with ID %s queued for deletion successfully", deleteReq.ID)
@@ -111,19 +79,14 @@ func DeleteBook(c *gin.Context) {
 }
 
 func SearchBooks(c *gin.Context) {
-	searchReq, ok := getValidatedPayload[req.SearchBooks](c)
-	if !ok {
-		logrus.Warn("Failed to retrieve validated SearchBooks payload")
-		c.JSON(http.StatusBadRequest, gin.H{"message": "Invalid request payload"})
-		return
-	}
+	searchReq := utils.GetValidatedPayload[req.SearchBooks](c)
 
 	esQuery := query.NewQueryBuilder().
 		Title(searchReq.Title).
 		PriceRange(searchReq.PriceRange.Min, searchReq.PriceRange.Max).
 		Build()
 
-	hits, err := clients.DoSearch(c, booksIndex, esQuery, searchReq.Size, searchReq.From)
+	hits, _, err := clients.DoSearch(c, booksIndex, esQuery, searchReq.Size, searchReq.From)
 	if err != nil {
 		logrus.Errorf("Error searching books: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -132,4 +95,28 @@ func SearchBooks(c *gin.Context) {
 
 	logrus.Infof("SearchBooks query executed successfully, retrieved %d results", len(hits))
 	c.JSON(http.StatusOK, hits)
+}
+
+func GetBooksStats(c *gin.Context) {
+	esQuery := query.NewQueryBuilder().
+		DistinctAuthors().
+		TotalBooks().
+		Build()
+
+	_, aggregations, err := clients.DoSearch(c, booksIndex, esQuery, 0, 0)
+	if err != nil {
+		logrus.Errorf("Error fetching books statistics: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	stats, err := utils.ParseAggregations(aggregations, _const.AggregationConfigs["BookStats"])
+	if err != nil {
+		logrus.Errorf("Error parsing aggregations: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
+	logrus.Infof("GetBooksStats executed successfully: %+v", stats)
+	c.JSON(http.StatusOK, stats)
 }

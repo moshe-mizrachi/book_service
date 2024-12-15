@@ -11,4 +11,5 @@ func RegisterRoutes(router *gin.Engine) {
 	api.ApiRouter(router)
 	common.HealthRoutes(router)
 	common.ActionRoutes(router)
+	common.StatisticRoutes(router)
 }

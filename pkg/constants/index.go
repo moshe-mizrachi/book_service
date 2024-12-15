@@ -14,7 +14,8 @@ var IndexMappings = []struct {
 		        "type": "text"
 		      },
 		      "author_name": {
-		        "type": "text"
+		        "type": "text",
+                 "fielddata": true // cause bad performance
 		      },
 		      "price": {
 		        "type": "float"

@@ -167,9 +167,9 @@ func indexWorker(tasks <-chan IndexRequest, done chan<- struct{}) {
 	done <- struct{}{}
 }
 
-func DoSearch(ctx context.Context, index string, query interface{}, size, from int) ([]map[string]interface{}, error) {
+func DoSearch(ctx context.Context, index string, query interface{}, size, from int) ([]map[string]interface{}, map[string]interface{}, error) {
 	if esClient == nil {
-		return nil, errors.New("elasticsearch client not initialized")
+		return nil, nil, errors.New("elasticsearch client not initialized")
 	}
 
 	res, err := esClient.Search(
@@ -181,39 +181,41 @@ func DoSearch(ctx context.Context, index string, query interface{}, size, from i
 		esClient.Search.WithFrom(from),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("search request failed: %w", err)
+		return nil, nil, fmt.Errorf("search request failed: %w", err)
 	}
 
 	if res.IsError() {
-		return nil, fmt.Errorf("search returned error: %s", res.String())
+		return nil, nil, fmt.Errorf("search returned error: %s", res.String())
 	}
 
 	var r map[string]interface{}
 	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
 		logrus.Fatalf("Error parsing response body: %v", err)
+		return nil, nil, err
 	}
 
+	// Extract hits
 	hitsArray, ok := r["hits"].(map[string]interface{})["hits"].([]interface{})
 	if !ok {
 		logrus.Fatalf("Error: Unable to extract hits from response")
-		return nil, fmt.Errorf("unable to extract hits from response")
+		return nil, nil, fmt.Errorf("unable to extract hits from response")
 	}
 
-	if len(hitsArray) == 0 {
-		logrus.Info("No documents found (0 hits)")
-		return nil, nil
-	}
-
-	sources := make([]map[string]interface{}, 0, len(hitsArray))
+	hits := make([]map[string]interface{}, 0, len(hitsArray))
 	for _, hit := range hitsArray {
 		if hitMap, ok := hit.(map[string]interface{}); ok {
 			if source, ok := hitMap["_source"].(map[string]interface{}); ok {
-				sources = append(sources, source)
+				hits = append(hits, source)
 			}
 		}
 	}
 
-	return sources, nil
+	aggregations, ok := r["aggregations"].(map[string]interface{})
+	if !ok {
+		aggregations = nil
+	}
+
+	return hits, aggregations, nil
 }
 
 func doIndex(ctx context.Context, index, id string, doc interface{}) (*esapi.Response, error) {
