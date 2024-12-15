@@ -1,11 +1,13 @@
 package middlewares
 
 import (
+	"book_service/pkg/interfaces"
 	"errors"
-	"github.com/gin-gonic/gin"
-	"github.com/go-playground/validator/v10"
 	"io"
 	"net/http"
+
+	"github.com/gin-gonic/gin"
+	"github.com/go-playground/validator/v10"
 )
 
 var (
@@ -24,9 +26,10 @@ func canIgnoreError(err error) bool {
 func Validation[T any]() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var payload T
+		payloadPtr := &payload // Create a pointer to payload
 
 		for _, binder := range binderFuncs {
-			if err := binder(c, &payload); err != nil && !canIgnoreError(err) {
+			if err := binder(c, payloadPtr); err != nil && !canIgnoreError(err) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 				c.Abort()
 				return
@@ -37,6 +40,14 @@ func Validation[T any]() gin.HandlerFunc {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			c.Abort()
 			return
+		}
+
+		if validatable, ok := any(payloadPtr).(interfaces.Validatable); ok {
+			if err := validatable.Validate(); err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+				c.Abort()
+				return
+			}
 		}
 
 		c.Set("validated", payload)
