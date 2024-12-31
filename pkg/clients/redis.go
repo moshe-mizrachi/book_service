@@ -2,11 +2,11 @@ package clients
 
 import (
 	_const "book_service/pkg/constants"
+	log "github.com/sirupsen/logrus"
 	"book_service/pkg/utils"
 	"context"
 	"encoding/json"
 	"github.com/go-redis/redis/v8"
-	"log"
 	"sync"
 	"time"
 )
@@ -50,12 +50,25 @@ func AppendAction(action UserAction) {
 	}
 }
 
-func CloseRedisClient() {
-	if err := redisClient.Close(); err != nil {
-		log.Printf("Error closing Redis connection: %v", err)
-	} else {
-		log.Println("Redis connection closed")
+func GetLastActions(user string) ([]UserAction, error) {
+	vals, err := redisClient.LRange(context.Background(), "user:"+user+":actions", 0, -1).Result()
+	if err != nil {
+		log.Errorf("Was unable to get user action for %s with error: %v", user, err)
+		return nil, err
 	}
+
+	var actions []UserAction
+	var userAction UserAction
+	for _, val := range vals {
+		err := json.Unmarshal([]byte(val), &userAction)
+		if err != nil {
+			log.Errorf("Was unable to unmarshal actions for %s with error: %v", user, err)
+			return nil, err
+		}
+		actions = append(actions, userAction)
+	}
+
+	return actions, nil
 }
 
 func actionWorker() {
@@ -92,34 +105,6 @@ func addToBuffer(action UserAction) {
 	}
 }
 
-func flushUserActionsToPipeline(pipe redis.Pipeliner, user string, actions []UserAction) {
-	for _, action := range actions {
-		data, err := json.Marshal(action)
-		if err != nil {
-			log.Printf("Failed to marshal action for user %s: %v", user, err)
-			continue
-		}
-		pipe.LPush(context.Background(), "user:"+user+":actions", data)
-		pipe.LTrim(context.Background(), "user:"+user+":actions", 0, 2) // Keep only the 3 most recent elements
-	}
-}
-
-func GetLastActions(user string) []UserAction {
-	vals, err := redisClient.LRange(context.Background(), "user:"+user+":actions", 0, -1).Result()
-	if err != nil {
-		panic(err)
-	}
-
-	actions := []UserAction{}
-	var userAction UserAction
-	for _, val := range vals {
-		json.Unmarshal([]byte(val), &userAction)
-		actions = append(actions, userAction)
-	}
-
-	return actions
-}
-
 func flushAllToRedis() {
 	bufferMutex.Lock()
 	defer bufferMutex.Unlock()
@@ -137,5 +122,17 @@ func flushAllToRedis() {
 	_, err := pipe.Exec(context.Background())
 	if err != nil {
 		log.Printf("Failed to execute pipeline: %v", err)
+	}
+}
+
+func flushUserActionsToPipeline(pipe redis.Pipeliner, user string, actions []UserAction) {
+	for _, action := range actions {
+		data, err := json.Marshal(action)
+		if err != nil {
+			log.Printf("Failed to marshal action for user %s: %v", user, err)
+			continue
+		}
+		pipe.LPush(context.Background(), "user:"+user+":actions", data)
+		pipe.LTrim(context.Background(), "user:"+user+":actions", 0, 2) // Keep only the 3 most recent elements
 	}
 }

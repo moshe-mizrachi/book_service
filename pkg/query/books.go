@@ -1,6 +1,9 @@
 package query
 
-import "book_service/pkg/constants"
+import (
+	"book_service/pkg/constants"
+	"log"
+)
 
 type Builder struct {
 	id           *string
@@ -55,22 +58,16 @@ func (qb *Builder) PriceRange(min, max float64) *Builder {
 }
 
 func (qb *Builder) DistinctAuthors() *Builder {
-	qb.aggregations["distinct_authors"] = map[string]interface{}{
-		"cardinality": map[string]interface{}{
-			"field": "author_name",
-		},
-	}
-	return qb
+	group := "BookStats" 
+	return qb.AddAggregation(group, "distinct_authors")
 }
 
 func (qb *Builder) TotalBooks() *Builder {
-	qb.aggregations["total_books"] = map[string]interface{}{
-		"value_count": map[string]interface{}{
-			"field": "_id",
-		},
-	}
-	return qb
+	group := "BookStats" 
+	return qb.AddAggregation(group, "total_books")
 }
+
+
 
 func (qb *Builder) Build() map[string]interface{} {
 	var mustClauses []map[string]interface{}
@@ -124,3 +121,21 @@ func (qb *Builder) Build() map[string]interface{} {
 
 	return query
 }
+
+func (qb *Builder) AddAggregation(aggGroup, aggName string) *Builder {
+	if groupConfig, ok := constants.AggregationConfigs[aggGroup]; ok {
+		if aggConfig, ok := groupConfig[aggName]; ok {
+			qb.aggregations[aggName] = map[string]interface{}{
+				aggConfig.Type: map[string]interface{}{
+					"field": aggConfig.Field,
+				},
+			}
+		} else {
+			log.Printf("Warning: Aggregation '%s' not found in group '%s'", aggName, aggGroup)
+		}
+	} else {
+		log.Printf("Warning: Aggregation group '%s' not found", aggGroup)
+	}
+	return qb
+}
+

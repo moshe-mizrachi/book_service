@@ -41,7 +41,7 @@ The **Book Service** is a highly modular and scalable backend application built 
     ```
 3. Run the app
     ```bash
-    go run cmd/main/main.go
+    go run cmd/service/service.go
     ```
 
 ### 🔑 Environment Variables

@@ -1,7 +1,9 @@
 package utils
 
 import (
+	"book_service/pkg/constants"
 	m "book_service/pkg/models/common"
+
 	"github.com/gin-gonic/gin"
 
 	"github.com/google/uuid"
@@ -13,11 +15,11 @@ func IsValidUUID(u string) bool {
 }
 
 func IsValidRange(price m.PriceRange) bool {
-	return price.Min > price.Max
+	return price.Min <= price.Max
 }
 
 func GetValidatedPayload[T any](c *gin.Context) T {
-	val, exists := c.Get("validated")
+	val, exists := c.Get(constants.ValidatedAccess)
 	if !exists {
 		var zero T
 		return zero

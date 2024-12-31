@@ -2,22 +2,12 @@ package middlewares
 
 import (
 	"book_service/pkg/clients"
+	"book_service/pkg/constants"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
 )
-
-func isActionRoute(path string) bool {
-	segments := strings.Split(path, "/")
-
-	for _, segment := range segments {
-		if segment == "action" {
-			return true
-		}
-	}
-	return false
-}
 
 func RecordActions() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -47,3 +37,13 @@ func GetUserName(c *gin.Context) string {
 	}
 	return username
 }
+
+func isActionRoute(path string) bool {
+	segments := strings.Split(path, "/")
+	lastIndex := len(segments) - 1
+		if segments[lastIndex] == constants.ActionRoute {
+			return true
+	}
+	return false
+}
+

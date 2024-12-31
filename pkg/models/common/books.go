@@ -17,5 +17,5 @@ type PriceRange struct {
 }
 
 type TitleUpdate struct {
-	Title string `json:"title"`
+	Title string `json:"title" validate:"required"`
 }

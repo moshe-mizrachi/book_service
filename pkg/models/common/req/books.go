@@ -26,10 +26,6 @@ func (g *SearchBooks) Validate() error {
 	return nil
 }
 
-func (g *GetBook) Transform() error {
-	return nil
-}
-
 type AddBook struct {
 	Title          string    `json:"title" validate:"required,min=2,max=250"`
 	AuthorName     string    `json:"author_name" validate:"required,min=2,max=40"`

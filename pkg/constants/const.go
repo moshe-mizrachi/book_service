@@ -5,9 +5,9 @@ import "time"
 type Function int
 
 const (
-	CreateIndex Function = 0
-	UpdateIndex Function = 1
-	DeleteIndex Function = 2
+	DoCreateIndex Function = 0
+	DoUpdateIndex Function = 1
+	DoDeleteIndex Function = 2
 )
 
 const HighestBookPrice = 9999.0
@@ -24,8 +24,12 @@ const (
 	ExpectContinueTimeout = 1 * time.Second
 )
 
+const ActionRoute = "/activity"
+
+const ValidatedAccess = "validated"
+
 const (
 	FlushSize         = 100
 	FlushInterval     = 5 * time.Second
-	ActionsChanelSize = 1000 // TODO: maybe better to use env var
+	ActionsChanelSize = 1000
 )

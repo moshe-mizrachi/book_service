@@ -5,9 +5,9 @@ import (
 )
 
 func HealthRoutes(router *gin.Engine) {
-	healthGroup := router.Group("/")
+	healthGroup := router.Group("/ping")
 	{
-		healthGroup.GET("/", func(c *gin.Context) {
+		healthGroup.GET("", func(c *gin.Context) {
 			c.JSON(200, gin.H{"message": "Healthy!"})
 		})
 	}

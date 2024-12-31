@@ -1,4 +1,4 @@
-package pkg
+package config
 
 import (
 	"book_service/pkg/clients"
@@ -29,8 +29,7 @@ func SetupServer() *gin.Engine {
 
 	logrus.Infof("Setting up middlewares")
 	app.Use(gin.Recovery())
-	app.Use(mw.Logger())
-	app.Use(mw.RecordActions())
+	app.Use(mw.Logger(), mw.RecordActions())
 
 	routes.RegisterRoutes(app)
 	logrus.Infof("Middlewares and routes initialized")
@@ -44,5 +43,5 @@ func InitClients() {
 	}
 
 	clients.InitRedisClient()
-	clients.InitWorkerPool(10)
+	clients.InitElasticWorkerPool(10)
 }

@@ -13,12 +13,14 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 
 	"github.com/elastic/go-elasticsearch/v7"
 	"github.com/elastic/go-elasticsearch/v7/esapi"
 	"github.com/elastic/go-elasticsearch/v7/esutil"
 )
+
+var BooksIndex, _ = utils.GetEnvVar[string]("BOOKS_INDEX", "books")
 
 type IndexRequest struct {
 	Ctx          context.Context
@@ -62,7 +64,7 @@ func InitElasticsearchClient() error {
 		MaxRetries:    3,
 	}
 
-	client, err := elasticsearch.NewClient(cfg)
+	client, err := elasticsearch.NewClient(cfg) // TODO: V8 -> elasticsearch.NewTypedClient(cfg)
 	if err != nil {
 		return fmt.Errorf("failed to create Elasticsearch client: %w", err)
 	}
@@ -79,53 +81,12 @@ func InitElasticsearchClient() error {
 
 	esClient = client
 	InitializeIndices()
-	logrus.Info("Setup indexes successfully")
-
-	logrus.Info("Elasticsearch client initialized successfully")
+	log.Info("Setup indexes successfully")
+	log.Info("Elasticsearch client initialized successfully")
 	return nil
 }
 
-func InitializeIndices() {
-	for _, indexMapping := range _const.IndexMappings {
-		err := createIndex(esClient, indexMapping.IndexName, indexMapping.Mapping)
-		if err != nil {
-			logrus.Errorf("Failed to create index %s: %v", indexMapping.IndexName, err)
-		} else {
-			logrus.Infof("Index %s initialized successfully", indexMapping.IndexName)
-		}
-	}
-}
-
-func createIndex(client *elasticsearch.Client, index string, mapping string) error {
-	exists, err := client.Indices.Exists([]string{index})
-	if err != nil {
-		logrus.Errorf("Error checking if index %s exists: %v", index, err)
-		return err
-	}
-	defer exists.Body.Close()
-
-	if exists.StatusCode == 200 {
-		logrus.Infof("Index %s already exists", index)
-		return nil
-	}
-
-	res, err := client.Indices.Create(index, client.Indices.Create.WithBody(strings.NewReader(mapping)))
-	if err != nil {
-		logrus.Errorf("Error creating index %s: %v", index, err)
-		return err
-	}
-	defer res.Body.Close()
-
-	if res.IsError() {
-		logrus.Errorf("Error response from Elasticsearch for index %s: %s", index, res.String())
-		return fmt.Errorf("failed to create index %s: %s", index, res.String())
-	}
-
-	logrus.Infof("Index %s created successfully", index)
-	return nil
-}
-
-func InitWorkerPool(numWorkers int) {
+func InitElasticWorkerPool(numWorkers int) {
 	oncePool.Do(func() {
 		taskQueueIndex = make(chan IndexRequest, 1000)
 		workersDone = make(chan struct{})
@@ -133,7 +94,7 @@ func InitWorkerPool(numWorkers int) {
 		for i := 0; i < numWorkers; i++ {
 			go indexWorker(taskQueueIndex, workersDone)
 		}
-		logrus.Infof("Started %d Elasticsearch index worker(s)", numWorkers)
+		log.Infof("Started %d Elasticsearch index worker(s)", numWorkers)
 	})
 }
 
@@ -143,31 +104,21 @@ func ShutdownWorkerPool() {
 	}
 }
 
-func indexWorker(tasks <-chan IndexRequest, done chan<- struct{}) {
-	for req := range tasks {
-		var (
-			res *esapi.Response
-			err error
-		)
-
-		switch req.Function {
-		case _const.CreateIndex:
-			res, err = doIndex(req.Ctx, req.Index, req.ID, req.Document)
-		case _const.UpdateIndex:
-			err = doUpdate(req.Index, req.ID, req.Document)
-		case _const.DeleteIndex:
-			err = doDelete(req.Index, req.ID)
-		default:
-			err = fmt.Errorf("invalid function type: %d", req.Function)
-		}
-
-		req.ResponseChan <- &IndexResult{Response: res, Err: err}
-		close(req.ResponseChan)
+func EnqueueIndexTask(ctx context.Context, index, id string, document interface{}, function _const.Function) {
+	responseChan := make(chan *IndexResult, 1)
+	req := IndexRequest{
+		Ctx:          ctx,
+		Index:        index,
+		ID:           id,
+		Document:     document,
+		ResponseChan: responseChan,
+		Function:     function,
 	}
-	done <- struct{}{}
+	taskQueueIndex <- req
+	log.Infof("Task enqueued for %s in index %s", function, index)
 }
 
-func DoSearch(ctx context.Context, index string, query interface{}, size, from int) ([]map[string]interface{}, map[string]interface{}, error) {
+func SearchIndex(ctx context.Context, index string, query interface{}, size, from int) ([]map[string]interface{}, map[string]interface{}, error) {
 	if esClient == nil {
 		return nil, nil, errors.New("elasticsearch client not initialized")
 	}
@@ -177,7 +128,7 @@ func DoSearch(ctx context.Context, index string, query interface{}, size, from i
 		esClient.Search.WithIndex(index),
 		esClient.Search.WithBody(esutil.NewJSONReader(query)),
 		esClient.Search.WithTrackTotalHits(true),
-		esClient.Search.WithSize(size),
+		esClient.Search.WithSize(size), 
 		esClient.Search.WithFrom(from),
 	)
 	if err != nil {
@@ -190,14 +141,13 @@ func DoSearch(ctx context.Context, index string, query interface{}, size, from i
 
 	var r map[string]interface{}
 	if err := json.NewDecoder(res.Body).Decode(&r); err != nil {
-		logrus.Fatalf("Error parsing response body: %v", err)
+		log.Fatalf("Error parsing response body: %v", err)
 		return nil, nil, err
 	}
 
-	// Extract hits
 	hitsArray, ok := r["hits"].(map[string]interface{})["hits"].([]interface{})
 	if !ok {
-		logrus.Fatalf("Error: Unable to extract hits from response")
+		log.Fatalf("Error: Unable to extract hits from response")
 		return nil, nil, fmt.Errorf("unable to extract hits from response")
 	}
 
@@ -218,7 +168,73 @@ func DoSearch(ctx context.Context, index string, query interface{}, size, from i
 	return hits, aggregations, nil
 }
 
-func doIndex(ctx context.Context, index, id string, doc interface{}) (*esapi.Response, error) {
+// Internal Functions
+func InitializeIndices() {
+	for _, indexMapping := range _const.IndexMappings {
+		err := createIndex(esClient, indexMapping.IndexName, indexMapping.Mapping)
+		if err != nil {
+			log.Errorf("Failed to create index %s: %v", indexMapping.IndexName, err)
+		} else {
+			log.Infof("Index %s initialized successfully", indexMapping.IndexName)
+		}
+	}
+}
+
+func createIndex(client *elasticsearch.Client, index string, mapping string) error {
+	exists, err := client.Indices.Exists([]string{index})
+	if err != nil {
+		log.Errorf("Error checking if index %s exists: %v", index, err)
+		return err
+	}
+	defer exists.Body.Close()
+
+	if exists.StatusCode == 200 {
+		log.Infof("Index %s already exists", index)
+		return nil
+	}
+
+	res, err := client.Indices.Create(index, client.Indices.Create.WithBody(strings.NewReader(mapping)))
+	if err != nil {
+		log.Errorf("Error creating index %s: %v", index, err)
+		return err
+	}
+	defer res.Body.Close()
+
+	if res.IsError() {
+		log.Errorf("Error response from Elasticsearch for index %s: %s", index, res.String())
+		return fmt.Errorf("failed to create index %s: %s", index, res.String())
+	}
+
+	log.Infof("Index %s created successfully", index)
+	return nil
+}
+
+func indexWorker(tasks <-chan IndexRequest, done chan<- struct{}) {
+	defer func() { done <- struct{}{} }()
+	for req := range tasks {
+		var (
+			res *esapi.Response
+			err error
+		)
+
+		switch req.Function {
+		case _const.DoCreateIndex:
+			res, err = addToIndex(req.Ctx, req.Index, req.ID, req.Document)
+		case _const.DoUpdateIndex:
+			err = updateIndex(req.Index, req.ID, req.Document)
+		case _const.DoDeleteIndex:
+			err = deleteIndex(req.Index, req.ID)
+		default:
+			err = fmt.Errorf("invalid function type: %d", req.Function)
+		}
+
+		req.ResponseChan <- &IndexResult{Response: res, Err: err}
+		close(req.ResponseChan)
+	}
+
+}
+
+func addToIndex(ctx context.Context, index, id string, doc interface{}) (*esapi.Response, error) {
 	if esClient == nil {
 		return nil, errors.New("elasticsearch client not initialized")
 	}
@@ -234,35 +250,20 @@ func doIndex(ctx context.Context, index, id string, doc interface{}) (*esapi.Res
 		esClient.Index.WithDocumentID(id),
 	)
 	if err != nil {
-		logrus.Errorf("Index request failed: %v", err)
+		log.Errorf("Index request failed: %v", err)
 		return nil, fmt.Errorf("index request failed: %w", err)
 	}
 
 	if res.IsError() {
-		logrus.Errorf("Index returned error: %s", res.String())
+		log.Errorf("Index returned error: %s", res.String())
 		return res, fmt.Errorf("index returned error: %s", res.String())
 	}
 
-	logrus.Infof("Document %s indexed successfully in %s", id, index)
+	log.Infof("Document %s indexed successfully in %s", id, index)
 	return res, nil
 }
 
-func EnqueueIndexTask(ctx context.Context, index, id string, document interface{}, function _const.Function) <-chan *IndexResult {
-	responseChan := make(chan *IndexResult, 1)
-	req := IndexRequest{
-		Ctx:          ctx,
-		Index:        index,
-		ID:           id,
-		Document:     document,
-		ResponseChan: responseChan,
-		Function:     function,
-	}
-	taskQueueIndex <- req
-	logrus.Infof("Task enqueued for %s in index %s", function, index)
-	return responseChan
-}
-
-func doDelete(index, docID string) error {
+func deleteIndex(index, docID string) error {
 	res, err := esClient.Delete(index, docID)
 	if err != nil {
 		return fmt.Errorf("error deleting document: %w", err)
@@ -273,11 +274,11 @@ func doDelete(index, docID string) error {
 		return fmt.Errorf("error deleting document: %s", res.String())
 	}
 
-	logrus.Infof("Document %s deleted successfully from index %s", docID, index)
+	log.Infof("Document %s deleted successfully from index %s", docID, index)
 	return nil
 }
 
-func doUpdate(index, docID string, updateData interface{}) error {
+func updateIndex(index, docID string, updateData interface{}) error {
 	updateBody, err := json.Marshal(map[string]interface{}{
 		"doc": updateData,
 	})
@@ -295,6 +296,6 @@ func doUpdate(index, docID string, updateData interface{}) error {
 		return fmt.Errorf("error updating document: %s", res.String())
 	}
 
-	logrus.Infof("Document %s updated successfully in index %s", docID, index)
+	log.Infof("Document %s updated successfully in index %s", docID, index)
 	return nil
 }

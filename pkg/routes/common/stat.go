@@ -8,6 +8,6 @@ import (
 func StatisticRoutes(router *gin.Engine) {
 	statGroup := router.Group("/store")
 	{
-		statGroup.GET("/", v1.GetBooksStats)
+		statGroup.GET("", v1.GetBooksStats)
 	}
 }
