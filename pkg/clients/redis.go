@@ -1,14 +1,15 @@
 package clients
 
 import (
-	_const "book_service/pkg/constants"
-	log "github.com/sirupsen/logrus"
+	"book_service/pkg/consts"
 	"book_service/pkg/utils"
 	"context"
 	"encoding/json"
-	"github.com/go-redis/redis/v8"
 	"sync"
 	"time"
+
+	"github.com/go-redis/redis/v8"
+	log "github.com/sirupsen/logrus"
 )
 
 type UserAction struct {
@@ -22,9 +23,9 @@ var (
 	redisClient   *redis.Client
 	actionBuffers = make(map[string][]UserAction)
 	bufferMutex   sync.Mutex
-	actionsChan   = make(chan UserAction, _const.ActionsChanelSize)
-	flushInterval = _const.FlushInterval
-	flushSize     = _const.FlushSize
+	actionsChan   = make(chan UserAction, consts.ActionsChanelSize)
+	flushInterval = consts.FlushInterval
+	flushSize     = consts.FlushSize
 )
 
 func InitRedisClient() {
@@ -69,6 +70,10 @@ func GetLastActions(user string) ([]UserAction, error) {
 	}
 
 	return actions, nil
+}
+
+func ShutDownRedisClient() {
+	close(actionsChan)
 }
 
 func actionWorker() {

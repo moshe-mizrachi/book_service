@@ -1,8 +1,11 @@
 package utils
 
 import (
-	"book_service/pkg/constants"
+	"book_service/pkg/consts"
 	m "book_service/pkg/models/common"
+	"fmt"
+
+	"github.com/samber/lo"
 
 	"github.com/gin-gonic/gin"
 
@@ -11,19 +14,19 @@ import (
 
 func IsValidUUID(u string) bool {
 	_, err := uuid.Parse(u)
-	return err == nil
+	return lo.Ternary(err == nil, true, false)
 }
 
 func IsValidRange(price m.PriceRange) bool {
-	return price.Min <= price.Max
+	return lo.Ternary(price.Min <= price.Max, true, false)
 }
 
-func GetValidatedPayload[T any](c *gin.Context) T {
-	val, exists := c.Get(constants.ValidatedAccess)
+func GetValidatedPayload[T any](c *gin.Context) (T, error) {
+	val, exists := c.Get(consts.ValidatedAccess)
 	if !exists {
 		var zero T
-		return zero
+		return zero, fmt.Errorf("payload not found in context")
 	}
 	typedVal, _ := val.(T)
-	return typedVal
+	return typedVal, nil
 }

@@ -1,4 +1,4 @@
-package constants
+package consts
 
 var IndexMappings = []struct {
 	IndexName string

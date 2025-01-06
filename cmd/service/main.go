@@ -8,16 +8,15 @@ import (
 	"os/signal"
 	"time"
 
-	app "book_service/pkg/config"
+	"book_service/pkg/config"
 	"book_service/pkg/utils"
-	"github.com/sirupsen/logrus"
+
+	log "github.com/sirupsen/logrus"
 )
 
 func main() {
-	app.SetupEnv()
-	app.InitClients()
+	server := config.Setup()
 
-	server := app.SetupServer()
 	port, _ := utils.GetEnvVar[string]("PORT", "8080")
 	address := "0.0.0.0:" + port
 
@@ -30,20 +29,20 @@ func main() {
 	signal.Notify(quit, os.Interrupt)
 
 	go func() {
-		logrus.Infof("Running server on :%s", port)
+		log.Infof("Running server on :%s", port)
 		if err := httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logrus.Fatalf("Server failed: %s", err)
+			log.Fatalf("Server failed: %s", err)
 		}
 	}()
 
 	<-quit
-
+	config.ShutDown()
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
 	if err := httpServer.Shutdown(ctx); err != nil {
-		logrus.Errorf("Server shutdown failed: %s", err)
+		log.Errorf("Server shutdown failed: %s", err)
 	} else {
-		logrus.Infof("Server shutdown successfully.")
+		log.Infof("Server shutdown successfully.")
 	}
 }

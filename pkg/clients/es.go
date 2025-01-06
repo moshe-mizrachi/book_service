@@ -1,7 +1,7 @@
 package clients
 
 import (
-	_const "book_service/pkg/constants"
+	"book_service/pkg/consts"
 	"book_service/pkg/utils"
 	"bytes"
 	"context"
@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"reflect"
 	"strings"
 	"sync"
 
@@ -28,7 +29,7 @@ type IndexRequest struct {
 	ID           string
 	Document     interface{}
 	ResponseChan chan *IndexResult
-	_const.Function
+	consts.Function
 }
 
 type IndexResult struct {
@@ -37,7 +38,7 @@ type IndexResult struct {
 }
 
 var (
-	esClient       *elasticsearch.Client
+	EsClient       *elasticsearch.Client
 	taskQueueIndex chan IndexRequest
 	workersDone    chan struct{}
 	oncePool       sync.Once
@@ -45,15 +46,15 @@ var (
 
 func InitElasticsearchClient() error {
 	tr := &http.Transport{
-		MaxIdleConns:        _const.MaxIdleConnections,
-		MaxIdleConnsPerHost: _const.MaxIdleConnectionsPerHost,
-		IdleConnTimeout:     _const.IdleConnectionTimeout,
+		MaxIdleConns:        consts.MaxIdleConnections,
+		MaxIdleConnsPerHost: consts.MaxIdleConnectionsPerHost,
+		IdleConnTimeout:     consts.IdleConnectionTimeout,
 		DialContext: (&net.Dialer{
-			Timeout:   _const.DialTimeout,
-			KeepAlive: _const.KeepAliveTime,
+			Timeout:   consts.DialTimeout,
+			KeepAlive: consts.KeepAliveTime,
 		}).DialContext,
-		TLSHandshakeTimeout:   _const.TLSHandshakeTimeout,
-		ExpectContinueTimeout: _const.ExpectContinueTimeout,
+		TLSHandshakeTimeout:   consts.TLSHandshakeTimeout,
+		ExpectContinueTimeout: consts.ExpectContinueTimeout,
 	}
 
 	elasticUri, _ := utils.GetEnvVar[string]("ELS_URI", "")
@@ -79,7 +80,7 @@ func InitElasticsearchClient() error {
 		return fmt.Errorf("elasticsearch returned error: %s", res.String())
 	}
 
-	esClient = client
+	EsClient = client
 	InitializeIndices()
 	log.Info("Setup indexes successfully")
 	log.Info("Elasticsearch client initialized successfully")
@@ -98,13 +99,15 @@ func InitElasticWorkerPool(numWorkers int) {
 	})
 }
 
-func ShutdownWorkerPool() {
+func ShutdownWorkerPool(numWorkers int) {
 	close(taskQueueIndex)
-	for range workersDone {
+	for i := 0; i < numWorkers; i++ {
+		<-workersDone
 	}
+	close(workersDone)
 }
 
-func EnqueueIndexTask(ctx context.Context, index, id string, document interface{}, function _const.Function) {
+func EnqueueIndexTask(ctx context.Context, index, id string, document interface{}, function consts.Function) {
 	responseChan := make(chan *IndexResult, 1)
 	req := IndexRequest{
 		Ctx:          ctx,
@@ -118,19 +121,27 @@ func EnqueueIndexTask(ctx context.Context, index, id string, document interface{
 	log.Infof("Task enqueued for %s in index %s", function, index)
 }
 
-func SearchIndex(ctx context.Context, index string, query interface{}, size, from int) ([]map[string]interface{}, map[string]interface{}, error) {
-	if esClient == nil {
+func SearchIndex(
+	ctx context.Context,
+	index string,
+	query interface{},
+	size, from int,
+	options ...func(*esapi.SearchRequest),
+) ([]map[string]interface{}, map[string]interface{}, error) {
+	if EsClient == nil {
 		return nil, nil, errors.New("elasticsearch client not initialized")
 	}
 
-	res, err := esClient.Search(
-		esClient.Search.WithContext(ctx),
-		esClient.Search.WithIndex(index),
-		esClient.Search.WithBody(esutil.NewJSONReader(query)),
-		esClient.Search.WithTrackTotalHits(true),
-		esClient.Search.WithSize(size), 
-		esClient.Search.WithFrom(from),
-	)
+	defaultOptions := []func(*esapi.SearchRequest){
+		EsClient.Search.WithContext(ctx),
+		EsClient.Search.WithIndex(index),
+		EsClient.Search.WithBody(esutil.NewJSONReader(query)),
+		EsClient.Search.WithSize(size),
+		EsClient.Search.WithFrom(from),
+	}
+	allOptions := mergeSearchOptions(defaultOptions, options)
+
+	res, err := EsClient.Search(allOptions...)
 	if err != nil {
 		return nil, nil, fmt.Errorf("search request failed: %w", err)
 	}
@@ -168,10 +179,9 @@ func SearchIndex(ctx context.Context, index string, query interface{}, size, fro
 	return hits, aggregations, nil
 }
 
-// Internal Functions
 func InitializeIndices() {
-	for _, indexMapping := range _const.IndexMappings {
-		err := createIndex(esClient, indexMapping.IndexName, indexMapping.Mapping)
+	for _, indexMapping := range consts.IndexMappings {
+		err := createIndex(EsClient, indexMapping.IndexName, indexMapping.Mapping)
 		if err != nil {
 			log.Errorf("Failed to create index %s: %v", indexMapping.IndexName, err)
 		} else {
@@ -218,11 +228,11 @@ func indexWorker(tasks <-chan IndexRequest, done chan<- struct{}) {
 		)
 
 		switch req.Function {
-		case _const.DoCreateIndex:
+		case consts.DoCreateIndex:
 			res, err = addToIndex(req.Ctx, req.Index, req.ID, req.Document)
-		case _const.DoUpdateIndex:
+		case consts.DoUpdateIndex:
 			err = updateIndex(req.Index, req.ID, req.Document)
-		case _const.DoDeleteIndex:
+		case consts.DoDeleteIndex:
 			err = deleteIndex(req.Index, req.ID)
 		default:
 			err = fmt.Errorf("invalid function type: %d", req.Function)
@@ -235,7 +245,7 @@ func indexWorker(tasks <-chan IndexRequest, done chan<- struct{}) {
 }
 
 func addToIndex(ctx context.Context, index, id string, doc interface{}) (*esapi.Response, error) {
-	if esClient == nil {
+	if EsClient == nil {
 		return nil, errors.New("elasticsearch client not initialized")
 	}
 
@@ -243,11 +253,11 @@ func addToIndex(ctx context.Context, index, id string, doc interface{}) (*esapi.
 		return nil, fmt.Errorf("document cannot be nil")
 	}
 
-	res, err := esClient.Index(
+	res, err := EsClient.Index(
 		index,
 		esutil.NewJSONReader(doc),
-		esClient.Index.WithContext(ctx),
-		esClient.Index.WithDocumentID(id),
+		EsClient.Index.WithContext(ctx),
+		EsClient.Index.WithDocumentID(id),
 	)
 	if err != nil {
 		log.Errorf("Index request failed: %v", err)
@@ -264,7 +274,7 @@ func addToIndex(ctx context.Context, index, id string, doc interface{}) (*esapi.
 }
 
 func deleteIndex(index, docID string) error {
-	res, err := esClient.Delete(index, docID)
+	res, err := EsClient.Delete(index, docID)
 	if err != nil {
 		return fmt.Errorf("error deleting document: %w", err)
 	}
@@ -286,7 +296,7 @@ func updateIndex(index, docID string, updateData interface{}) error {
 		return fmt.Errorf("error marshalling update data: %w", err)
 	}
 
-	res, err := esClient.Update(index, docID, bytes.NewReader(updateBody))
+	res, err := EsClient.Update(index, docID, bytes.NewReader(updateBody))
 	if err != nil {
 		return fmt.Errorf("error updating document: %w", err)
 	}
@@ -298,4 +308,28 @@ func updateIndex(index, docID string, updateData interface{}) error {
 
 	log.Infof("Document %s updated successfully in index %s", docID, index)
 	return nil
+}
+
+// mergeSearchOptions merges two slices of functions with the following rules:
+// - Unique functions from both slices are included.
+// - If a function exists in both, the function from the second slice overrides the one from the first.
+func mergeSearchOptions(defaults, overrides []func(*esapi.SearchRequest)) []func(*esapi.SearchRequest) {
+	seen := make(map[uintptr]func(*esapi.SearchRequest))
+
+	for _, opt := range defaults {
+		ptr := reflect.ValueOf(opt).Pointer()
+		seen[ptr] = opt
+	}
+
+	for _, opt := range overrides {
+		ptr := reflect.ValueOf(opt).Pointer()
+		seen[ptr] = opt
+	}
+
+	merged := make([]func(*esapi.SearchRequest), 0, len(seen))
+	for _, opt := range seen {
+		merged = append(merged, opt)
+	}
+
+	return merged
 }

@@ -1,7 +1,11 @@
-package constants
+package consts
 
-import "time"
+import (
+	"math"
+	"time"
+)
 
+// Function Index operations
 type Function int
 
 const (
@@ -10,8 +14,10 @@ const (
 	DoDeleteIndex Function = 2
 )
 
-const HighestBookPrice = 9999.0
+// HighestBookPrice Book max price
+var HighestBookPrice = math.Inf(1)
 
+// Elasticsearch config
 const (
 	MaxIdleConnections        = 50
 	MaxIdleConnectionsPerHost = 10
@@ -22,12 +28,16 @@ const (
 
 	TLSHandshakeTimeout   = 10 * time.Second
 	ExpectContinueTimeout = 1 * time.Second
+	WorkersNumber         = 10
 )
 
-const ActionRoute = "/activity"
+// ActionRoute routes
+const ActionRoute = "activity"
 
+// ValidatedAccess Validations
 const ValidatedAccess = "validated"
 
+// Redis config
 const (
 	FlushSize         = 100
 	FlushInterval     = 5 * time.Second

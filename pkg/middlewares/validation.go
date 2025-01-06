@@ -1,7 +1,7 @@
 package middlewares
 
 import (
-	"book_service/pkg/constants"
+	"book_service/pkg/consts"
 	"book_service/pkg/interfaces"
 	"errors"
 	"io"
@@ -11,10 +11,19 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
+var (
+	validate    = validator.New()
+	binderFuncs = []func(*gin.Context, any) error{
+		func(c *gin.Context, obj any) error { return c.ShouldBindUri(obj) },
+		func(c *gin.Context, obj any) error { return c.ShouldBindQuery(obj) },
+		func(c *gin.Context, obj any) error { return c.ShouldBindJSON(obj) },
+	}
+)
+
 func Validation[T any]() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		var payload T
-		payloadPtr := &payload // Create a pointer to payload
+		payloadPtr := &payload
 
 		for _, binder := range binderFuncs {
 			if err := binder(c, payloadPtr); err != nil && !canIgnoreError(err) {
@@ -38,19 +47,10 @@ func Validation[T any]() gin.HandlerFunc {
 			}
 		}
 
-		c.Set(constants.ValidatedAccess, payload)
+		c.Set(consts.ValidatedAccess, payload)
 		c.Next()
 	}
 }
-
-var (
-	validate    = validator.New()
-	binderFuncs = []func(*gin.Context, any) error{
-		func(c *gin.Context, obj any) error { return c.ShouldBindUri(obj) },
-		func(c *gin.Context, obj any) error { return c.ShouldBindQuery(obj) },
-		func(c *gin.Context, obj any) error { return c.ShouldBindJSON(obj) },
-	}
-)
 
 func canIgnoreError(err error) bool {
 	return errors.Is(err, io.EOF)

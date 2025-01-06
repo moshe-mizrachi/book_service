@@ -82,23 +82,6 @@ func TestQueryBuilder_PriceRange(t *testing.T) {
 	assert.Equal(t, expected, result)
 }
 
-func TestQueryBuilder_Username(t *testing.T) {
-	qb := query.NewQueryBuilder().Username("testuser")
-	result := qb.Build()
-
-	expected := map[string]interface{}{
-		"query": map[string]interface{}{
-			"bool": map[string]interface{}{
-				"must": []map[string]interface{}{
-					{"match": map[string]interface{}{"username": "testuser"}},
-				},
-			},
-		},
-	}
-
-	assert.Equal(t, expected, result)
-}
-
 func TestQueryBuilder_MatchAll(t *testing.T) {
 	qb := query.NewQueryBuilder()
 	result := qb.Build()
@@ -136,7 +119,6 @@ func TestQueryBuilder_ComplexCombination(t *testing.T) {
 		ID("12345").
 		Title("test title").
 		PriceRange(50, 100).
-		Username("testuser").
 		AuthorName("Author")
 
 	result := qb.Build()
@@ -153,7 +135,6 @@ func TestQueryBuilder_ComplexCombination(t *testing.T) {
 							"lte": float64(100),
 						},
 					}},
-					{"match": map[string]interface{}{"username": "testuser"}},
 					{"match": map[string]interface{}{"author_name": "Author"}},
 				},
 			},

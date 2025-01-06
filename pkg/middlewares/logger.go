@@ -4,7 +4,7 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
+	log "github.com/sirupsen/logrus"
 )
 
 func Logger() gin.HandlerFunc {
@@ -13,7 +13,7 @@ func Logger() gin.HandlerFunc {
 
 		c.Next()
 
-		logrus.WithFields(logrus.Fields{
+		log.WithFields(log.Fields{
 			"status":     c.Writer.Status(),
 			"method":     c.Request.Method,
 			"path":       c.Request.URL.Path,

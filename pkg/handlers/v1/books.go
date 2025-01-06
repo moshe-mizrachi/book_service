@@ -2,13 +2,14 @@ package v1
 
 import (
 	"book_service/pkg/clients"
-	_const "book_service/pkg/constants"
+	"book_service/pkg/consts"
 	"book_service/pkg/models/common"
 	"book_service/pkg/models/common/req"
 	"book_service/pkg/models/common/res"
 	"book_service/pkg/query"
 	"book_service/pkg/utils"
 	"net/http"
+	"time"
 
 	log "github.com/sirupsen/logrus"
 
@@ -17,13 +18,16 @@ import (
 	"github.com/jinzhu/copier"
 )
 
-
-
 func GetBookById(c *gin.Context) {
-	bookReq := utils.GetValidatedPayload[req.GetBook](c)
+	bookReq, err := utils.GetValidatedPayload[req.GetBook](c)
+	if err != nil {
+		log.Errorf("Error getting book by ID: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
 
-	query := query.NewQueryBuilder().ID(bookReq.ID).Build()
-	hits, _, err := clients.SearchIndex(c, clients.BooksIndex, query, 1, 0)
+	esQuery := query.NewQueryBuilder().ID(bookReq.ID).Build()
+	hits, _, err := clients.SearchIndex(c, clients.BooksIndex, esQuery, 1, 0)
 	if err != nil {
 		log.Errorf("Error searching for book with ID %s: %v", bookReq.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -40,10 +44,16 @@ func GetBookById(c *gin.Context) {
 }
 
 func CreateBook(c *gin.Context) {
-	bodyBookReq := utils.GetValidatedPayload[req.AddBook](c)
+	bodyBookReq, err := utils.GetValidatedPayload[req.AddBook](c)
+	if err != nil {
+		log.Errorf("Error getting book by ID: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
 	book := common.Book{
 		ID:          uuid.New(),
-		PublishDate: bodyBookReq.PublishDate.Format("2006-01-02"),
+		PublishDate: bodyBookReq.PublishDate.Format(time.DateOnly),
 	}
 
 	if err := copier.Copy(&book, &bodyBookReq); err != nil {
@@ -52,13 +62,19 @@ func CreateBook(c *gin.Context) {
 		return
 	}
 
-	clients.EnqueueIndexTask(c, clients.BooksIndex, book.ID.String(), book, _const.DoCreateIndex)
+	clients.EnqueueIndexTask(c, clients.BooksIndex, book.ID.String(), book, consts.DoCreateIndex)
 	log.Infof("Book with ID %s queued for creation successfully", book.ID)
 	c.JSON(http.StatusAccepted, res.AddBook{ID: book.ID})
 }
 
 func UpdateBook(c *gin.Context) {
-	bodyBookReq := utils.GetValidatedPayload[req.UpdateBook](c)
+	bodyBookReq, err := utils.GetValidatedPayload[req.UpdateBook](c)
+	if err != nil {
+		log.Errorf("Error getting book by ID: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
+
 	titleUpdate := common.TitleUpdate{}
 	if err := copier.Copy(&titleUpdate, &bodyBookReq); err != nil {
 		log.Errorf("Error copying UpdateBook payload to TitleUpdate: %v", err)
@@ -66,52 +82,61 @@ func UpdateBook(c *gin.Context) {
 		return
 	}
 
-	clients.EnqueueIndexTask(c, clients.BooksIndex, bodyBookReq.ID, titleUpdate, _const.DoUpdateIndex)
+	clients.EnqueueIndexTask(c, clients.BooksIndex, bodyBookReq.ID, titleUpdate, consts.DoUpdateIndex)
 	log.Infof("Book with ID %s queued for update successfully", bodyBookReq.ID)
 	c.JSON(http.StatusAccepted, res.UpdateBook{ID: uuid.MustParse(bodyBookReq.ID)})
 }
 
 func DeleteBook(c *gin.Context) {
-	deleteReq := utils.GetValidatedPayload[req.DeleteBook](c)
+	deleteReq, err := utils.GetValidatedPayload[req.DeleteBook](c)
+	if err != nil {
+		log.Errorf("Error getting book by ID: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
 
-	clients.EnqueueIndexTask(c, clients.BooksIndex, deleteReq.ID, "", _const.DoDeleteIndex)
+	clients.EnqueueIndexTask(c, clients.BooksIndex, deleteReq.ID, "", consts.DoDeleteIndex)
 	log.Infof("Book with ID %s queued for deletion successfully", deleteReq.ID)
 	c.JSON(http.StatusAccepted, res.DeleteBook{ID: uuid.MustParse(deleteReq.ID)})
 }
 
 func SearchBooks(c *gin.Context) {
-	searchReq := utils.GetValidatedPayload[req.SearchBooks](c)
+	searchReq, err := utils.GetValidatedPayload[req.SearchBooks](c)
+	if err != nil {
+		log.Errorf("Error getting book by ID: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
+		return
+	}
 
-	query := query.NewQueryBuilder().
+	esQuery := query.NewQueryBuilder().
 		Title(searchReq.Title).
 		PriceRange(searchReq.PriceRange.Min, searchReq.PriceRange.Max).
 		Build()
 
-	hits, _, err := clients.SearchIndex(c, clients.BooksIndex, query, searchReq.Size, searchReq.From)
+	hits, _, err := clients.SearchIndex(c, clients.BooksIndex, esQuery, searchReq.Size, searchReq.From)
 	if err != nil {
 		log.Errorf("Error searching books: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
-	log.Infof("SearchBooks query executed successfully, retrieved %d results", len(hits))
+	log.Infof("SearchBooks esQuery executed successfully, retrieved %d results", len(hits))
 	c.JSON(http.StatusOK, hits)
 }
 
 func GetBooksStats(c *gin.Context) {
-	query := query.NewQueryBuilder().
+	esQuery := query.NewQueryBuilder().
 		DistinctAuthors().
-		TotalBooks().
 		Build()
 
-	_, aggregations, err := clients.SearchIndex(c, clients.BooksIndex, query, 0, 0)
+	_, aggregations, err := clients.SearchIndex(c, clients.BooksIndex, esQuery, 0, 0, clients.EsClient.Search.WithTrackTotalHits(true))
 	if err != nil {
 		log.Errorf("Error fetching books statistics: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
 		return
 	}
 
-	stats, err := utils.ParseAggregations(aggregations, _const.AggregationConfigs["BookStats"])
+	stats, err := utils.ParseAggregations(aggregations, consts.AggregationConfigs["BookStats"])
 	if err != nil {
 		log.Errorf("Error parsing aggregations: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})

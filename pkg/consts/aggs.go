@@ -1,4 +1,4 @@
-package constants
+package consts
 
 type AggregationConfig struct {
 	Field string

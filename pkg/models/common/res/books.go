@@ -1,8 +1,6 @@
 package res
 
 import (
-	"book_service/pkg/models/common"
-
 	"github.com/google/uuid"
 )
 

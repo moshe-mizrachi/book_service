@@ -1,8 +1,9 @@
 package query
 
 import (
-	"book_service/pkg/constants"
-	"log"
+	"book_service/pkg/consts"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type Builder struct {
@@ -48,7 +49,7 @@ func (qb *Builder) PriceRange(min, max float64) *Builder {
 	unseted := min == max && min == 0
 	if unseted {
 		qb.priceMin = &min
-		highestPrice := constants.HighestBookPrice
+		highestPrice := consts.HighestBookPrice
 		qb.priceMax = &highestPrice
 		return qb
 	}
@@ -58,16 +59,14 @@ func (qb *Builder) PriceRange(min, max float64) *Builder {
 }
 
 func (qb *Builder) DistinctAuthors() *Builder {
-	group := "BookStats" 
+	group := "BookStats"
 	return qb.AddAggregation(group, "distinct_authors")
 }
 
 func (qb *Builder) TotalBooks() *Builder {
-	group := "BookStats" 
+	group := "BookStats"
 	return qb.AddAggregation(group, "total_books")
 }
-
-
 
 func (qb *Builder) Build() map[string]interface{} {
 	var mustClauses []map[string]interface{}
@@ -123,7 +122,7 @@ func (qb *Builder) Build() map[string]interface{} {
 }
 
 func (qb *Builder) AddAggregation(aggGroup, aggName string) *Builder {
-	if groupConfig, ok := constants.AggregationConfigs[aggGroup]; ok {
+	if groupConfig, ok := consts.AggregationConfigs[aggGroup]; ok {
 		if aggConfig, ok := groupConfig[aggName]; ok {
 			qb.aggregations[aggName] = map[string]interface{}{
 				aggConfig.Type: map[string]interface{}{
@@ -138,4 +137,3 @@ func (qb *Builder) AddAggregation(aggGroup, aggName string) *Builder {
 	}
 	return qb
 }
-
