@@ -13,7 +13,17 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func SetupEnv() {
+func Setup() *gin.Engine {
+	setupEnv()
+	initClients()
+	return setupServer()
+}
+
+func ShutDown() {
+	shutDownClients()
+}
+
+func setupEnv() {
 	if os.Getenv("GIN_MODE") == "test" {
 		if err := godotenv.Load(".env.test"); err != nil {
 			log.Infof("Error loading .env.test file: %v", err)
@@ -25,7 +35,7 @@ func SetupEnv() {
 	}
 }
 
-func SetupServer() *gin.Engine {
+func setupServer() *gin.Engine {
 	app := gin.New()
 	binding.EnableDecoderDisallowUnknownFields = true
 
@@ -39,13 +49,7 @@ func SetupServer() *gin.Engine {
 	return app
 }
 
-func Setup() *gin.Engine {
-	SetupEnv()
-	InitClients()
-	return SetupServer()
-}
-
-func InitClients() {
+func initClients() {
 	if err := clients.InitElasticsearchClient(); err != nil {
 		log.Infof("Failed to initialize Elasticsearch: %v", err)
 	}
@@ -54,11 +58,7 @@ func InitClients() {
 	clients.InitElasticWorkerPool(consts.WorkersNumber)
 }
 
-func ShutDown() {
-	ShutDownClients()
-}
-
-func ShutDownClients() {
+func shutDownClients() {
 	clients.ShutdownWorkerPool(consts.WorkersNumber)
 	clients.ShutDownRedisClient()
 }

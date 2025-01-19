@@ -27,7 +27,7 @@ func GetBookById(c *gin.Context) {
 	}
 
 	esQuery := query.NewQueryBuilder().ID(bookReq.ID).Build()
-	hits, _, err := clients.SearchIndex(c, clients.BooksIndex, esQuery, 1, 0)
+	hits, _, err := clients.SearchIndex(c, esQuery, 1, 0)
 	if err != nil {
 		log.Errorf("Error searching for book with ID %s: %v", bookReq.ID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -62,7 +62,7 @@ func CreateBook(c *gin.Context) {
 		return
 	}
 
-	clients.EnqueueIndexTask(c, clients.BooksIndex, book.ID.String(), book, consts.DoCreateIndex)
+	clients.EnqueueIndexTask(c, book.ID.String(), book, consts.DoCreateIndex)
 	log.Infof("Book with ID %s queued for creation successfully", book.ID)
 	c.JSON(http.StatusAccepted, res.AddBook{ID: book.ID})
 }
@@ -82,7 +82,7 @@ func UpdateBook(c *gin.Context) {
 		return
 	}
 
-	clients.EnqueueIndexTask(c, clients.BooksIndex, bodyBookReq.ID, titleUpdate, consts.DoUpdateIndex)
+	clients.EnqueueIndexTask(c, bodyBookReq.ID, titleUpdate, consts.DoUpdateIndex)
 	log.Infof("Book with ID %s queued for update successfully", bodyBookReq.ID)
 	c.JSON(http.StatusAccepted, res.UpdateBook{ID: uuid.MustParse(bodyBookReq.ID)})
 }
@@ -95,7 +95,7 @@ func DeleteBook(c *gin.Context) {
 		return
 	}
 
-	clients.EnqueueIndexTask(c, clients.BooksIndex, deleteReq.ID, "", consts.DoDeleteIndex)
+	clients.EnqueueIndexTask(c, deleteReq.ID, "", consts.DoDeleteIndex)
 	log.Infof("Book with ID %s queued for deletion successfully", deleteReq.ID)
 	c.JSON(http.StatusAccepted, res.DeleteBook{ID: uuid.MustParse(deleteReq.ID)})
 }
@@ -113,7 +113,7 @@ func SearchBooks(c *gin.Context) {
 		PriceRange(searchReq.PriceRange.Min, searchReq.PriceRange.Max).
 		Build()
 
-	hits, _, err := clients.SearchIndex(c, clients.BooksIndex, esQuery, searchReq.Size, searchReq.From)
+	hits, _, err := clients.SearchIndex(c, esQuery, searchReq.Size, searchReq.From)
 	if err != nil {
 		log.Errorf("Error searching books: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})
@@ -129,7 +129,7 @@ func GetBooksStats(c *gin.Context) {
 		DistinctAuthors().
 		Build()
 
-	_, aggregations, err := clients.SearchIndex(c, clients.BooksIndex, esQuery, 0, 0, clients.EsClient.Search.WithTrackTotalHits(true))
+	_, aggregations, err := clients.SearchIndex(c, esQuery, 0, 0, clients.EsClient.Search.WithTrackTotalHits(true))
 	if err != nil {
 		log.Errorf("Error fetching books statistics: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"message": err.Error()})

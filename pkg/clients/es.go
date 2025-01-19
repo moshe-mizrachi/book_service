@@ -21,7 +21,7 @@ import (
 	"github.com/elastic/go-elasticsearch/v7/esutil"
 )
 
-var BooksIndex, _ = utils.GetEnvVar[string]("BOOKS_INDEX", "books")
+var booksIndex, _ = utils.GetEnvVar[string]("BOOKS_INDEX", "books")
 
 type IndexRequest struct {
 	Ctx          context.Context
@@ -107,23 +107,22 @@ func ShutdownWorkerPool(numWorkers int) {
 	close(workersDone)
 }
 
-func EnqueueIndexTask(ctx context.Context, index, id string, document interface{}, function consts.Function) {
+func EnqueueIndexTask(ctx context.Context, id string, document interface{}, function consts.Function) {
 	responseChan := make(chan *IndexResult, 1)
 	req := IndexRequest{
 		Ctx:          ctx,
-		Index:        index,
+		Index:        booksIndex,
 		ID:           id,
 		Document:     document,
 		ResponseChan: responseChan,
 		Function:     function,
 	}
 	taskQueueIndex <- req
-	log.Infof("Task enqueued for %s in index %s", function, index)
+	log.Infof("Task enqueued for %s in index %s", function, booksIndex)
 }
 
 func SearchIndex(
 	ctx context.Context,
-	index string,
 	query interface{},
 	size, from int,
 	options ...func(*esapi.SearchRequest),
@@ -134,7 +133,7 @@ func SearchIndex(
 
 	defaultOptions := []func(*esapi.SearchRequest){
 		EsClient.Search.WithContext(ctx),
-		EsClient.Search.WithIndex(index),
+		EsClient.Search.WithIndex(booksIndex),
 		EsClient.Search.WithBody(esutil.NewJSONReader(query)),
 		EsClient.Search.WithSize(size),
 		EsClient.Search.WithFrom(from),
