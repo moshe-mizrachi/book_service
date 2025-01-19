@@ -1,20 +1,19 @@
-package utils
+package middlewares
 
 import (
-	"github.com/gin-gonic/gin"
-	"github.com/sirupsen/logrus"
 	"time"
+
+	"github.com/gin-gonic/gin"
+	log "github.com/sirupsen/logrus"
 )
 
-func CustomLogger() gin.HandlerFunc {
+func Logger() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		start := time.Now()
 
-		// Process the request
 		c.Next()
 
-		// Log request details
-		logrus.WithFields(logrus.Fields{
+		log.WithFields(log.Fields{
 			"status":     c.Writer.Status(),
 			"method":     c.Request.Method,
 			"path":       c.Request.URL.Path,
